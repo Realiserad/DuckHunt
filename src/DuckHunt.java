@@ -40,7 +40,8 @@ public class DuckHunt {
 			Matrix e = new Matrix(buf.readLine()); // emission matrix
 			Matrix s = new Matrix(buf.readLine()); // state probability distribution
 			int[] o = getObservations(buf.readLine());
-			//Matrix fwm = forward(o);
+			Matrix fwm = forward(o, t, e, s);
+			System.out.println(fwm.toString());
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -55,7 +56,7 @@ public class DuckHunt {
 			Matrix fwm = forward(getObservations(buf.readLine()), t, e, s);
 			int[] i = fwm.getAllMaxRowIndices();
 			StringBuilder sb = new StringBuilder();
-			for (int c=0; c<i.length; c++) {
+			for (int c=0; c < i.length; c++) {
 				if (c > 0) sb.append(" ");
 				sb.append(i[c]);
 			}
@@ -74,20 +75,20 @@ public class DuckHunt {
 	 */
 	private static Matrix forward(int[] o, Matrix a, Matrix b, Matrix pi) {
 		final int T = o.length;
-		double[][] fwd = new double[a.rows()][T]; // a.rows = number of states
-		for (int i = 0; i < a.rows(); i++) {
-			// Init probabilities foreach state at time = 0
-			fwd[i][0] = pi[i] * b[i][o[0]];
+		double[][] fwd = new double[a.rows()][T];
+		
+		for (int row = 0; row < a.rows(); row++) {
+			// Set probabilities for t=0
+			fwd[row][0] = pi.get(row, 0) * b.get(row, o[0]);
 		}
-		for (int t = 0; t < T-1; t++) {// foreach time step (or column)
-			for (int j = 0; j < a.rows(); i++) { // foreach state (or row)
-				fwd[j][t+1] = 0;
-				for (int i = 0; i < a.rows(); i++) {
-					fwd[j][t+1] += (fwd[i][t] * a[i][j]);
-				}
-				fwd[j][t+1] *= b[j][o[t+1]];
+		for (int t = 0; t < T-1; t++)
+			for (int state = 0; state < a.rows(); state++) {
+				fwd[state][t+1] = 0;
+				for (int i = 0; i < a.rows(); i++)
+					fwd[state][t+1] += (fwd[i][t] * a.get(i, state));
+				fwd[state][t+1] *= b.get(state, o[t+1]);
 			}
-		}
+		
 		return new Matrix(fwd);
 	}
 	
@@ -95,7 +96,7 @@ public class DuckHunt {
 		String[] items = data.split(" ");
 		int[] o = new int[items.length - 1];
 		for(int i = 1; i < items.length; i++)
-			v[i-1] = Integer.parseInt(items[i]);
+			o[i-1] = Integer.parseInt(items[i]);
 		return o;
 	}
 	
@@ -173,14 +174,19 @@ public class DuckHunt {
 		 * Get all max row indices for this matrix.
 		 */ 
 		public int[] getAllMaxRowIndices() {
-			int[] indices = new int[matrix[0].length];
-			for (int column = 0; i < matrix[0].length; column++) {
+			int[] indices = new int[this.columns()];
+			for (int column = 0; column < this.columns(); column++) {
 				indices[column] = getMaxRowIndex(column);
 			}
+			return indices;
 		}
 		
 		public int rows() {
 			return this.matrix.length;
+		}
+		
+		public int columns() {
+			return this.matrix[0].length;
 		}
 		
 		/**
@@ -204,8 +210,16 @@ public class DuckHunt {
 			return sb.toString();
 		}
 		
-		private double[][] getData() {
+		public double[][] getData() {
 			return this.matrix;
+		}
+		
+		public void set(int r, int c, double value) {
+			this.matrix[r][c] = value;
+		}
+		
+		public double get(int r, int c) {
+			return this.matrix[r][c];
 		}
 	}
 }
