@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.Random;
 
 class Player {
 	/*********************************************************************
@@ -8,11 +9,16 @@ class Player {
 	 *********************************************************************/
 	private final double HMM_CORRECTNESS = 0;
 	private final double EMISSION_PROBABILITY = 0.7;
-	private final int SEQUENCE_LENGHT = 50;
+	private final int SEQUENCE_LENGHT = 23;
 	private final Action DO_NOT_SHOOT = new Action(-1, -1);
 	private static int hits;
 	private static int shots;
-
+	private Oracle oracle;
+	
+	public Player() {
+		this.oracle = new Oracle();
+	}
+	
 	public Action shoot(GameState state, Deadline due) {
 		/* Make sure we have enough observations. */
 		if (state.getBird(0).getSeqLength() < SEQUENCE_LENGHT) {
@@ -42,13 +48,13 @@ class Player {
 		 * 1) Consider only the most correct model
 		 * 2) Don't shoot if model is not correct enough
 		 * 3) Don't shoot if flight path seems unpredictable 
-		 * 4) Don't shoot if bird is already dead */
+		 * 4) Don't shoot if bird is already dead 
+		 * 5) Don't shoot if the bird looks like a stork */
 		int target = max(hmmCorrectness);
 		int emission = 0; // One of the observation values in Constants.java
-		if (hmmCorrectness[target] < HMM_CORRECTNESS) {
-			return DO_NOT_SHOOT;
-		}
-		if (state.getBird(target).isAlive()) {
+		if (state.getBird(target).isAlive() && 
+			hmmCorrectness[target] >= HMM_CORRECTNESS &&
+			!oracle.isBlackStork(getObservationSequence(state.getBird(target)))) {
 			double[] emissionProbabilities = hmm[target].getEmissionProbabilities();
 			double max = emissionProbabilities[0];
 			for (int j = 1; j < emissionProbabilities.length; j++) {
@@ -95,12 +101,12 @@ class Player {
 		return guess;
 	}
 
-	public void hit(GameState pState, int pBird, Deadline pDue) {
+	public void hit(GameState state, int bird, Deadline due) {
 		hits++;
 	}
 
 	public void reveal(GameState state, int[] species, Deadline due) {
-		/* Do nothing. */
+		oracle.setData(state, species);
 	}
 
 	public static int getShots() {
@@ -110,6 +116,54 @@ class Player {
 	public static int getHits() {
 		return hits;
 	}
+	
+	/*********************************************************************
+	 ********************************************************************* 
+	 * 						  Guess species
+	 *********************************************************************
+	 *********************************************************************/
+	private class Oracle {
+		private int[] species = new int[] { 
+				Constants.SPECIES_PIGEON, 
+				Constants.SPECIES_RAVEN, 
+				Constants.SPECIES_SKYLARK,
+				Constants.SPECIES_SWALLOW,
+				Constants.SPECIES_SNIPE,
+				Constants.SPECIES_BLACK_STORK,
+		};
+		private boolean hasGuessed = false; // True if this oracle has made a guess
+		private GameState endState;
+		private int[] revealedSpecies;
+		
+		public boolean hasGuessed() {
+			return hasGuessed;
+		}
+		
+		public int[] getRandomGuess(int nBirds) {
+			Random r = new Random();
+			int[] guess = new int[nBirds];
+			for (int i = 0; i < nBirds; i++) {
+				guess[i] = species[r.nextInt(nBirds)];
+			}
+			hasGuessed = true;
+			return guess;
+		}
+		
+		public void setData(GameState state, int[] species) {
+			this.endState = state;
+			this.revealedSpecies = species;
+		}
+		
+		/** Will not guess unless setData has been called! */
+		public int[] getQualifiedGuess() {
+			return null;
+		}
+		
+		/** Will always return false on first round! */
+		public boolean isBlackStork(int[] observations) {
+			return false;
+		}
+	}
 
 	/*********************************************************************
 	 ********************************************************************* 
@@ -118,7 +172,7 @@ class Player {
 	 *********************************************************************/
 	private class HMM {
 		private int nStates, nEmissions;
-		private final int STEPS = 50; // Maximum number of steps in Baum-Welch
+		private final int STEPS = 80; // Maximum number of steps in Baum-Welch
 		private int[] observations;
 		private double[][] A, B;
 		private double[] pi;
