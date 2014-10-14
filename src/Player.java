@@ -1,5 +1,6 @@
 import java.util.ArrayList;
-import java.util.Random;
+import java.util.Arrays;
+import java.util.Collections;
 
 class Player {
 	/*********************************************************************
@@ -14,6 +15,8 @@ class Player {
 	private static int hits;
 	private static int shots;
 	private Oracle oracle;
+	private boolean isInitialized = false;
+	private HMM[] storedHmm;
 	
 	public Player() {
 		this.oracle = new Oracle();
@@ -42,6 +45,9 @@ class Player {
 				hmmCorrectness[i] = hmm[i].tune();
 			}
 		}
+		
+		/* Save the HMMs. */
+		storedHmm = hmm;
 
 		/* Pick a bird to shoot. In order to maximize score, the following
 		 * aspects are taken into account:
@@ -94,19 +100,24 @@ class Player {
 	}
 
 	public int[] guess(GameState state, Deadline due) {
-		int[] guess = new int[state.getNumBirds()];
-		for (int i = 0; i < state.getNumBirds(); i++) {
-			guess[i] = Constants.SPECIES_UNKNOWN;
+		if (isInitialized) {
+			// The oracle is initialized, make a guess!
+			return oracle.guess(state);
+		} else {
+			// Guess all pigeons
+			return oracle.getPigeonArray(state.getNumBirds());
 		}
-		return guess;
 	}
 
 	public void hit(GameState state, int bird, Deadline due) {
 		hits++;
 	}
 
-	public void reveal(GameState state, int[] species, Deadline due) {
-		oracle.setData(state, species);
+	public void reveal(GameState state, int[] revealed, Deadline due) {
+		if (!isInitialized) {
+			oracle.initialize(state, revealed, storedHmm);
+			isInitialized = true;
+		}
 	}
 
 	public static int getShots() {
@@ -131,35 +142,138 @@ class Player {
 				Constants.SPECIES_SNIPE,
 				Constants.SPECIES_BLACK_STORK,
 		};
-		private boolean hasGuessed = false; // True if this oracle has made a guess
-		private GameState endState;
-		private int[] revealedSpecies;
+		/* Will contain reference birds, in the order defined by our species array above. */
+		private ReferenceBird[] referenceBirds = new ReferenceBird[Constants.COUNT_SPECIES];
+		private final int DRILLING_LENGTH = 5;
 		
-		public boolean hasGuessed() {
-			return hasGuessed;
+		private class ReferenceBird {
+			/* A drilling sequence unique for this species. */
+			public int[] drillingSequence;
+			/* Type of species. One of the species in Constants.java */
+			public int species;
+			/* The complete observation sequence for this bird. */
+			public int[] observationSequence;
+			
+			public ReferenceBird(Bird bird, int species) {
+				this.species = species;
+				this.observationSequence = new int[bird.getSeqLength()];
+				for (int i = 0; i < bird.getSeqLength(); i++) {
+					observationSequence[i] = bird.getObservation(i);
+				}
+			}
 		}
 		
-		public int[] getRandomGuess(int nBirds) {
-			Random r = new Random();
-			int[] guess = new int[nBirds];
+		public int[] getPigeonArray(int nBirds) {
+			int[] pigeons = new int[nBirds];
 			for (int i = 0; i < nBirds; i++) {
-				guess[i] = species[r.nextInt(nBirds)];
+				pigeons[i] = Constants.SPECIES_PIGEON;
 			}
-			hasGuessed = true;
+			return pigeons;
+		}
+		
+		public void initialize(GameState gState, int[] revealed, HMM[] hmm) {
+			// Step 1: Get reference birds from our GameState
+			for (int i = 0; i < Constants.COUNT_SPECIES; i++) {
+				referenceBirds[i] = getReferenceBird(species[i], gState, revealed); // returns null if species[i] does not exist in gState
+			}
+			
+			// Step 2: Decode the state sequences for each of the reference birds
+			for (int i = 0; i < Constants.COUNT_SPECIES; i++) {
+				// Step 3: Extract the drilling sequence
+				if (referenceBirds[i] != null) {
+					referenceBirds[i].drillingSequence = getDrillingSequence(referenceBirds[i], hmm[i].decode());
+				}
+			}
+		}
+		
+		/** Return a reference bird of the type given as argument. The reference bird 
+		 * chosen will be the one with with the longest observation sequence. */
+		private ReferenceBird getReferenceBird(int type, GameState state, int[] revealed) {
+			int max = -1;
+			for (int i = 0; i < state.getNumBirds(); i++) {
+				if (type == revealed[i] && 
+					state.getBird(i).getSeqLength() > max) {
+					max = i;
+				}
+			}
+			if (max == -1) {
+				// No such bird
+				return null;
+			}
+			return new ReferenceBird(state.getBird(max), revealed[max]);
+		}
+		
+		/** Get the drilling sequence of maximum length DRILLING_LENGHT for the reference bird given as 
+		 * argument, e.g return the corresponding observation sequence that matches the longest 
+		 * continuous state subsequence of 3:s. */
+		public int[] getDrillingSequence(ReferenceBird bird, ArrayList<Integer> states) {
+			int start = -1; // Inclusive
+			int end = -2; // Exclusive
+			int count = 1;
+			boolean isCounting = false;
+			for (int i = 0; i < states.size(); i++) {
+				if (isCounting) {
+					if (!states.get(i).equals(3)) {
+						if (count > end - start + 1) {
+							// New LCS
+							start = i - count + 1;
+							end = count;
+						} else {
+							isCounting = false;
+							count = 1;
+						}
+					} else {
+						count++;
+						if (count == DRILLING_LENGTH) {
+							// Trim the drilling length in order to make isSubsequence faster
+							break;
+						}
+					}
+				} else if (states.get(i).equals(3)) {
+					isCounting = true;
+				}
+			}
+			if (end == -2) {
+				// No drills :(
+				return new int[0];
+			}
+			return Arrays.copyOfRange(bird.observationSequence, start, end);
+		}
+		
+		private int[] getObservationSequence(Bird bird) {
+			int[] observations = new int[bird.getSeqLength()];
+			for (int i = 0; i < bird.getSeqLength(); i++) {
+				observations[i] = bird.getObservation(i);
+			}
+			return observations;
+		}
+		
+		/** Try to guess each of the species in the game state given as argument. */
+		public int[] guess(GameState gState) {
+			int[] guess = new int[gState.getNumBirds()];
+			Arrays.fill(guess, Constants.SPECIES_UNKNOWN);
+			for (int i = 0; i < gState.getNumBirds(); i++) {
+				/* If the drilling sequence for the species Y (known) is a part of the observation sequence 
+				 * for X (unknown) then X is considered to be of the same species as Y. */
+				for (int j = 0; j < Constants.COUNT_SPECIES; j++) {
+					if (referenceBirds[j] != null &&
+						referenceBirds[j].drillingSequence.length == DRILLING_LENGTH &&
+						isSubsequence(referenceBirds[j].drillingSequence, getObservationSequence(gState.getBird(i)))) {
+						// X is of type referenceBirds[j]!
+						guess[i] = referenceBirds[j].species;
+						break;
+					}
+				}
+			}
 			return guess;
 		}
 		
-		public void setData(GameState state, int[] species) {
-			this.endState = state;
-			this.revealedSpecies = species;
+		private boolean isSubsequence(int[] drillingSequence, int[] observationSequence) {
+			int i = Collections.indexOfSubList(Arrays.asList(observationSequence), 
+				Arrays.asList(drillingSequence)); // source, target
+			return i == -1 ? false : true;
 		}
-		
-		/** Will not guess unless setData has been called! */
-		public int[] getQualifiedGuess() {
-			return null;
-		}
-		
-		/** Will always return false on first round! */
+
 		public boolean isBlackStork(int[] observations) {
 			return false;
 		}
@@ -410,7 +524,7 @@ class Player {
 					for(int i = 0; i < nStates; i++) {
 						double nextProbability = delta[t - 1][i] + Math.log(A[i][cState]) + 
 								Math.log(B[cState][observations[t]]);
-						if(nextProbability > maxProbability) {
+						if (nextProbability > maxProbability) {
 							maxProbability = nextProbability;
 							maxState = i;
 						}
