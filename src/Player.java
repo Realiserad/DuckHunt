@@ -8,9 +8,9 @@ class Player {
 	 * 						Player skeleton
 	 *********************************************************************
 	 *********************************************************************/
-	private final double HMM_CORRECTNESS = 0;
+	private final double HMM_CORRECTNESS = -0.5;
 	private final double EMISSION_PROBABILITY = 0.7;
-	private final int SEQUENCE_LENGHT = 23;
+	private final int SEQUENCE_LENGHT = 19;
 	private final Action DO_NOT_SHOOT = new Action(-1, -1);
 	private static int hits;
 	private static int shots;
@@ -100,6 +100,9 @@ class Player {
 	}
 
 	public int[] guess(GameState state, Deadline due) {
+//		int[] guess = new int[state.getNumBirds()];
+//		Arrays.fill(guess, Constants.SPECIES_UNKNOWN);
+//		return guess;
 		if (isInitialized) {
 			// The oracle is initialized, make a guess!
 			return oracle.guess(state);
@@ -156,8 +159,9 @@ class Player {
 			
 			public ReferenceBird(Bird bird, int species) {
 				this.species = species;
-				this.observationSequence = new int[bird.getSeqLength()];
-				for (int i = 0; i < bird.getSeqLength(); i++) {
+				this.observationSequence = new int[getSeqLength(bird)];
+				// Copy the observation sequence where the bird was alive
+				for (int i = 0; i < observationSequence.length; i++) {
 					observationSequence[i] = bird.getObservation(i);
 				}
 			}
@@ -181,18 +185,30 @@ class Player {
 			for (int i = 0; i < Constants.COUNT_SPECIES; i++) {
 				// Step 3: Extract the drilling sequence
 				if (referenceBirds[i] != null) {
+					hmm[i].setObservationSequence(referenceBirds[i].observationSequence);
 					referenceBirds[i].drillingSequence = getDrillingSequence(referenceBirds[i], hmm[i].decode());
 				}
 			}
 		}
 		
+		/** Returns the sequence length without trailing -1:s. */
+		private int getSeqLength(Bird bird) {
+			for (int i = bird.getSeqLength() - 1; i >= 0; i--) {
+				if (bird.getObservation(i) != -1) {
+					return i + 1;
+				}
+			}
+			// Dead already??
+			return -1;
+		}
+		
 		/** Return a reference bird of the type given as argument. The reference bird 
-		 * chosen will be the one with with the longest observation sequence. */
+		 * chosen will be the one who stayed alive for the longest time. */
 		private ReferenceBird getReferenceBird(int type, GameState state, int[] revealed) {
 			int max = -1;
 			for (int i = 0; i < state.getNumBirds(); i++) {
 				if (type == revealed[i] && 
-					state.getBird(i).getSeqLength() > max) {
+					getSeqLength(state.getBird(i)) > max) {
 					max = i;
 				}
 			}
@@ -257,7 +273,7 @@ class Player {
 				 * for X (unknown) then X is considered to be of the same species as Y. */
 				for (int j = 0; j < Constants.COUNT_SPECIES; j++) {
 					if (referenceBirds[j] != null &&
-						referenceBirds[j].drillingSequence.length == DRILLING_LENGTH &&
+						referenceBirds[j].drillingSequence.length >= DRILLING_LENGTH &&
 						isSubsequence(referenceBirds[j].drillingSequence, getObservationSequence(gState.getBird(i)))) {
 						// X is of type referenceBirds[j]!
 						guess[i] = referenceBirds[j].species;
@@ -275,6 +291,19 @@ class Player {
 		}
 
 		public boolean isBlackStork(int[] observations) {
+			if (referenceBirds[Constants.SPECIES_BLACK_STORK] == null) {
+				// No reference object, cannot determine
+				return false;
+			}
+			if (observations.length < DRILLING_LENGTH) {
+				// Not enough observations, let's hope this is not a black stork
+				return false;
+			}
+			if (isSubsequence(referenceBirds[Constants.SPECIES_BLACK_STORK].drillingSequence, observations)) {
+				// Looks like a black stork, maybe investigate a bit more?
+				return true;
+			}
+			// Doesn't look like a black stork but who knows?
 			return false;
 		}
 	}
@@ -483,6 +512,10 @@ class Player {
 				paths.add(new ArrayList<Integer>());
 			}
 			return paths;
+		}
+		
+		public void setObservationSequence(int[] observations) {
+			this.observations = observations;
 		}
 		
 		public double[] getEmissionProbabilities() {
