@@ -4,7 +4,7 @@ DuckHunt
 Problem Description
 -------------------
 
-A description of this exercise is [available on Kattis](https://kth.kattis.com/problems/kth%3Aai%3Aduckhunt). A screenshot of the problem description is also available in this repository for reference.
+A description of this exercise is [available on Kattis](https://kth.kattis.com/problems/kth.ai.duckhunt). A screenshot of the problem description is also available in this repository for reference.
 
 Compile
 -------
