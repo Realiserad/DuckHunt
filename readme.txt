@@ -1,38 +1,52 @@
-DuckHunt ai14
+DuckHunt
+========
 
-A copy of this code is available at GitHub
-https://github.com/Realiserad/DuckHunt
+Problem Description
+-------------------
 
-A description of this exercise is available at Kattis
-https://kth.kattis.com/problems/kth%3Aai%3Aduckhunt
+A description of this exercise is [available on Kattis](https://kth.kattis.com/problems/kth%3Aai%3Aduckhunt). A screenshot of the problem description is also available in this repository for reference.
 
-# Compile
+Compile
+-------
+
+Compile using the Java compiler:
+```
 javac *.java -d ../bin
+```
 
-# Modes
+Modes
+-----
+
 The agent can be executed in two different modes:
-1. Server
-Act as the judge by sending predefined observations one at a time.
-2. Client
-Get observations from std out and output actions to
-std out (this is the default mode).
+- *Server* - Act as the judge by sending predefined observations one at a time.
+- *Client* - Get observations from std out and output actions to std out (this is the default mode).
 
-# Play
+Play
+----
+
+Run the following command:
+```
 mkfifo player2server server2player
+```
 
-In first terminal:
+In the first terminal:
+```
 java Main verbose load XXX.in server < player2server > server2player
+```
 
-In second terminal:
+In the second terminal:
+```
 java Main verbose > player2server < server2player
+```
 
 Or a quickie for debug purposes:
+```
 java Main server < player2server | java Main verbose > player2server
+```
 
-# Tips
-I receive error message 'getline for player 0 failed'?
-This is probably because your pipe is broken, try to remove
-server2player and player2server and run mkfifo again.
+Tips
+----
 
-How can I run the client with assertions on?
-Use the -ea flag.
+If you receive the error message "getline for player 0 failed", then it is probably because your pipe is broken. Try to remove ``server2player`` and ``player2server`` and run ``mkfifo`` again.
+
+To run the client with assertions enabled, use the ``-ea`` flags.
